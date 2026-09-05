@@ -18,6 +18,29 @@ var ctx = null;
 var W = 280;
 var H = 380;
 
+/**
+ * requestAnimationFrame 降级实现（关键）
+ *
+ * DedicatedWorkerGlobalScope 里没有 requestAnimationFrame（它只存在于 Window 上下文）。
+ * 直接调用会抛 ReferenceError，动画循环第一帧就停摆，导致：
+ *   - cycleRemaining 只发出初始值后冻结
+ *   - App.vue 中 `cycleRemaining <= 50` 永不成立，永远不触发 startEnding
+ *   - entry-loader-mask 永不移除 —— 页面看起来就是"白屏"，
+ *     且 Worker 内部错误不会打到主页面控制台，排查时看不到任何报错。
+ *
+ * 因此这里用 setTimeout 模拟 ~60fps 的帧循环。
+ */
+if (typeof requestAnimationFrame !== "function") {
+  self.requestAnimationFrame = function (cb) {
+    return setTimeout(function () {
+      cb(typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
+    }, 16);
+  };
+  self.cancelAnimationFrame = function (id) {
+    clearTimeout(id);
+  };
+}
+
 // 布局常量
 var GEO_CY = 110;
 var GEO_RADIUS = 78;

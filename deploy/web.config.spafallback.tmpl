@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GIS Tools IIS 部署配置 - SPA history 路由回退版（scripts/build-deploy.mjs 自动生成）
+  版本 v${VERSION} / 基础路径 ${BASE}
+
+  ⚠ 前提：IIS 必须已安装 "URL Rewrite" 模块，否则本文件会导致整站 500.19。
+     下载：https://www.iis.net/downloads/microsoft/url-rewrite
+     未安装该模块时，请继续使用站点根目录的 web.config（仅 MIME 修复版）。
+
+  作用：
+    1. 修复 .webmanifest 等 MIME 404
+    2. 浏览器直接刷新子路由（如 /gis-tools/data）时回退到 index.html，避免 404
+
+  用法：把本文件重命名为 web.config，覆盖站点根目录下的 web.config，然后 iisreset。
+-->
+<configuration>
+  <system.webServer>
+    <staticContent>
+      <remove fileExtension=".webmanifest" />
+      <mimeMap fileExtension=".webmanifest" mimeType="application/manifest+json" />
+      <remove fileExtension=".woff2" />
+      <mimeMap fileExtension=".woff2" mimeType="font/woff2" />
+      <remove fileExtension=".woff" />
+      <mimeMap fileExtension=".woff" mimeType="font/woff" />
+      <remove fileExtension=".ttf" />
+      <mimeMap fileExtension=".ttf" mimeType="font/ttf" />
+    </staticContent>
+    <rewrite>
+      <rules>
+        <!-- SPA 回退：请求的不是真实文件/目录时，交给 index.html 由前端路由接管 -->
+        <rule name="SPA-Fallback" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+            <!-- 不回退 Service Worker 与 PWA 资源，避免遮蔽真实文件 -->
+            <add input="{REQUEST_URI}" pattern="^${BASE}sw\.js$" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="${BASE}index.html" />
+        </rule>
+      </rules>
+    </rewrite>
+  </system.webServer>
+</configuration>

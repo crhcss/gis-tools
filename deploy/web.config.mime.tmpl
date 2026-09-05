@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GIS Tools IIS 部署配置（scripts/build-deploy.mjs 自动生成）
+  版本 v${VERSION} / 基础路径 ${BASE}
+
+  作用：IIS 静态文件处理对未注册 MIME 类型的扩展名直接返回 404（不是 403/下载），
+       .webmanifest 正是这种扩展名——这就是 manifest.webmanifest 报 404 的原因。
+  用法：本文件放在站点根目录（应用程序 gis-tools 的物理目录，即 dist）即自动生效，
+       无需重启 IIS；本文件对 nginx / GitHub Pages 部署无影响。
+-->
+<configuration>
+  <system.webServer>
+    <staticContent>
+      <!-- PWA 清单（本次 404 的根因） -->
+      <remove fileExtension=".webmanifest" />
+      <mimeMap fileExtension=".webmanifest" mimeType="application/manifest+json" />
+      <!-- 字体类兜底：IIS 8 以下默认缺失，重复注册时 remove 保证不报错 -->
+      <remove fileExtension=".woff2" />
+      <mimeMap fileExtension=".woff2" mimeType="font/woff2" />
+      <remove fileExtension=".woff" />
+      <mimeMap fileExtension=".woff" mimeType="font/woff" />
+      <remove fileExtension=".ttf" />
+      <mimeMap fileExtension=".ttf" mimeType="font/ttf" />
+    </staticContent>
+  </system.webServer>
+</configuration>

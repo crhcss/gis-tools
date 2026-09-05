@@ -95,6 +95,11 @@ function easeOutCubic(t: number): number {
 
 const CHASE_RATIO = 0.05    // 每帧按差值的 5% 追赶
 
+/** hideStarted 后等待 Worker 回传 cycleRemaining 归零的最长时间（超时强制 finishing） */
+const CYCLE_MAX_WAIT_MS = 5000
+/** hideStarted 的时间戳（用于上面的超时判定） */
+let hideStartedTs = 0
+
 function tick(ts: number): void {
   if (phase === 'loading') {
     tickLoading(ts)
@@ -134,9 +139,23 @@ function tickLoading(ts: number): void {
   pushLoaderText(displayValue + '%', TIPS[tipIdx].text)
 
   // 检查是否可以进入 finishing
-  if (hideStarted && (window.__loaderCycleRemaining || 0) <= 50) {
-    phase = 'finishing'
-    finishStartTs = 0
+  //
+  // cycleRemaining 由 Worker 的动画循环持续回传；若 Worker 异常（例如其内部
+  // requestAnimationFrame 不可用导致循环停摆），该值会冻结在初始的大数值上，
+  // 条件永不成立 → 永远不触发 startEnding → 遮罩不移除 → "进度 100% 后白屏"。
+  // 因此加时间兜底：hideStarted 后超过 CYCLE_MAX_WAIT_MS 直接进 finishing。
+  if (hideStarted) {
+    if (!hideStartedTs) hideStartedTs = Date.now()
+    const cycleOk = (window.__loaderCycleRemaining || 0) <= 50
+    const cycleTimedOut = Date.now() - hideStartedTs > CYCLE_MAX_WAIT_MS
+    if (cycleOk || cycleTimedOut) {
+      if (cycleTimedOut && !cycleOk) {
+        // eslint-disable-next-line no-console
+        console.warn('[entryLoader] cycleRemaining timeout, force finishing')
+      }
+      phase = 'finishing'
+      finishStartTs = 0
+    }
   }
 
   fakeRafId = requestAnimationFrame(tick)
@@ -224,6 +243,7 @@ export function hideEntryLoader(): void {
   if (typeof window === 'undefined') return
   if (hideStarted) return
   hideStarted = true
+  hideStartedTs = Date.now()
   // eslint-disable-next-line no-console
   console.info('[entryLoader] hide requested, phase=' + phase + ', manifest complete=' + isManifestComplete())
 }

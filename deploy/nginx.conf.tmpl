@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# GIS Tools 前端部署 - Nginx 配置示例（由 scripts/build-deploy.mjs 渲染生成）
+#
+#   版本         : ${VERSION}
+#   提交         : ${BRANCH} @ ${COMMIT}
+#   构建时间     : ${BUILDTIME}
+#   部署基础路径 : ${BASE}
+#
+# 用法:
+#   1. 把部署包解压到目标目录（例如 /var/www/gis-tools）
+#   2. 把本文件复制到 /etc/nginx/conf.d/gis-tools.conf，按需修改 server_name 与 root
+#   3. nginx -t && nginx -s reload
+#
+# 说明:
+#   - 站点根目录必须指向"包含 index.html 的那一层"，即部署包解压后的目录本身
+#   - 应用使用 HTML5 history 路由，刷新子路由必须回退到 index.html，否则 404
+# ---------------------------------------------------------------------------
+
+server {
+    listen 80;
+    server_name _;
+
+    # 站点根目录 = 部署包解压目录（含 index.html 的那一层）
+    root ${ROOT_HINT};
+    index index.html;
+
+    charset utf-8;
+
+    # ---------------------------- gzip 压缩 ----------------------------
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css application/json application/javascript
+               text/xml application/xml image/svg+xml application/wasm;
+
+    # ------------------ 入口页 / Service Worker：禁止缓存 ------------------
+    # 发版后必须立即生效，否则旧 SW 会继续用旧缓存，用户看到旧版本
+    location = ${BASE}index.html {
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+    location = ${BASE}sw.js {
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+    }
+
+    # ---------------- 带 hash 的静态资源：长缓存 + immutable ----------------
+    location ~* ^${BASE}assets/.*\.(js|css|woff2?|ttf|otf|png|jpe?g|gif|svg|ico)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable" always;
+        try_files $uri =404;
+    }
+
+    # ---------------------- SPA history 路由回退 ----------------------
+    location ${BASE} {
+        try_files $uri $uri/ ${BASE}index.html;
+    }
+
+    # 可选：开启 HTTPS 后把 HTTP 跳转过来
+    # return 301 https://$host$request_uri;
+}

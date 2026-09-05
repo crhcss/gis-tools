@@ -21,14 +21,28 @@ const __dirname = path.dirname(__filename)
 const pathSrc = path.resolve(__dirname, 'src')
 
 /**
+ * 部署基础路径
+ *
+ * 默认 /gis-tools/（GitHub Pages）。改部署路径时不要手改这里，改用部署脚本：
+ *   pnpm build:deploy -- --base=/
+ * 脚本会注入 DEPLOY_BASE 环境变量，base 与 PWA manifest 的 start_url / scope /
+ * share_target.action 会一并跟着变，保证三者始终一致。
+ */
+const BASE = process.env.DEPLOY_BASE || '/gis-tools/'
+
+/**
  * Vite 插件：build 时收集"初始加载必需"的资源清单，内联到 index.html
  *
  * 算法（BFS）：
  *   1. 从入口 chunk（isEntry）出发
  *   2. 递归收集静态依赖（imports）—— 这些是初始加载必需的
- *   3. 收集入口的直接动态依赖（dynamicImports）—— 初始路由组件、Monaco 等
- *   4. 动态依赖的静态依赖也收集（它们的 imports）
- *   5. 不收集动态依赖的动态依赖 —— 那是按需加载的功能模块（如 city-*.js）
+ *   3. 不收集动态依赖（dynamicImports）—— 路由级 lazy import（如
+ *      () => import('~/components/data/GisData.vue')）只在 vue-router 解析路由时
+ *      才发起请求，时机晚于首屏 DOMContentLoaded；PerformanceObserver 在
+ *      entry-loader-manifest 注入的清单里等它，必然超时。
+ *      这些 chunk 由 vite 自动加 <link rel="modulepreload"> 或路由导航时按需加载，
+ *      loading 屏不应该阻塞自己等不到的请求。
+ *   4. 顶层 .css 资源加入清单
  *
  * 这样清单只包含初始渲染必需的资源，运行时等 100% 完成才隐藏 loading
  * dev 模式下不生成清单，loading 屏降级为里程碑驱动
@@ -47,14 +61,11 @@ function entryLoaderManifest(): Plugin {
         .filter(([, c]) => c.type === 'chunk' && c.isEntry)
         .map(([name]) => name)
 
-      // BFS 队列：allowDynamic=true 表示可以收集其 dynamicImports
-      // 入口 chunk 允许收集动态依赖（初始路由组件等）
-      // 动态依赖的 chunk 不允许再收集动态依赖（排除按需加载的功能模块）
-      const queue: { name: string; allowDynamic: boolean }[] =
-        entryNames.map((name) => ({ name, allowDynamic: true }))
+      // BFS 队列：只递归静态依赖
+      const queue: string[] = [...entryNames]
 
       while (queue.length > 0) {
-        const { name, allowDynamic } = queue.shift()!
+        const name = queue.shift()!
         if (visited.has(name)) continue
         visited.add(name)
 
@@ -63,28 +74,27 @@ function entryLoaderManifest(): Plugin {
 
         initialChunks.add(name)
 
-        // 静态依赖：递归收集（保持 allowDynamic 标志）
+        // 只递归静态依赖；dynamicImports（路由级 lazy / 按需功能模块）不收集
         for (const dep of chunk.imports || []) {
           if (!visited.has(dep)) {
-            queue.push({ name: dep, allowDynamic })
-          }
-        }
-
-        // 动态依赖：只收集入口的直接动态依赖（初始路由组件、Monaco 等）
-        // 不递归它们的动态依赖（按需加载的功能模块，如 city-*.js）
-        if (allowDynamic) {
-          for (const dep of chunk.dynamicImports || []) {
-            if (!visited.has(dep)) {
-              queue.push({ name: dep, allowDynamic: false })
-            }
+            queue.push(dep)
           }
         }
       }
 
-      // CSS 文件：初始加载的 CSS（Vite 会把初始 CSS 提取成单独文件）
-      const cssAssets = Object.entries(bundle)
-        .filter(([, c]) => c.type === 'asset' && c.fileName.endsWith('.css'))
-        .map(([name]) => name)
+      // CSS 文件：只收集被初始 chunks 引用的 css（chunk.cssFiles 是 vite 在
+      // generateBundle 阶段给出的、被该 chunk import 引入的 css 列表）。
+      // 不要全收所有顶层 .css，否则 lazy 视图（如 GisData.vue）的 css 也会被
+      // 塞进 manifest，但它的请求时机晚于首屏，loading 屏永远等不到。
+      const cssSet = new Set<string>()
+      for (const name of initialChunks) {
+        const chunk = bundle[name]
+        if (!chunk || chunk.type !== 'chunk') continue
+        for (const css of chunk.cssFiles || []) {
+          cssSet.add(css)
+        }
+      }
+      const cssAssets = [...cssSet]
 
       chunkAssets = [...initialChunks, ...cssAssets]
     },
@@ -99,7 +109,7 @@ function entryLoaderManifest(): Plugin {
 }
 
 export default defineConfig({
-  base: '/gis-tools/',
+  base: BASE,
   resolve: {
     alias: {
       '~/': `${pathSrc}/`,
@@ -169,8 +179,8 @@ export default defineConfig({
         display: 'standalone',
         // 显式声明 start_url 和 scope，确保 PWA 注册路径与 share_target.action 一致
         // 已安装的 PWA 缓存旧 manifest，新增 share_target 后需用户重装 PWA 才能注册分享目标
-        start_url: '/gis-tools/',
-        scope: '/gis-tools/',
+        start_url: BASE,
+        scope: BASE,
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -192,7 +202,7 @@ export default defineConfig({
         // Web Share Target：让已安装的 PWA 出现在移动端系统分享面板
         // 接收空间数据文件（GeoJSON/WKT/SHP/ShapeZip/DXF/EXF/电子报盘）
         share_target: {
-          action: '/gis-tools/share-receiver',
+          action: `${BASE}share-receiver`,
           method: 'POST',
           enctype: 'multipart/form-data',
           params: {

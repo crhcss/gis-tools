@@ -1,0 +1,108 @@
+# GIS Tools 部署说明
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 | v${VERSION} |
+| 分支 / 提交 | ${BRANCH} @ ${COMMIT} |
+| 构建时间 | ${BUILDTIME} |
+| 部署基础路径 | `${BASE}` |
+| 文件数 / 体积 | ${FILE_COUNT} 个 / ${TOTAL_SIZE} |
+
+## 1. 包结构
+
+```
+${PACKAGE}/
+├── index.html              # 应用入口（含启动动画）
+├── web.config              # IIS MIME 修复（nginx/GH Pages 忽略，无害）
+├── assets/                 # 带 hash 的 JS / CSS，可长缓存
+├── *.webmanifest           # PWA 清单
+├── sw.js                   # Service Worker（vite-plugin-pwa 生成）
+├── workbox-*.js            # Workbox 运行时
+├── BUILD_INFO.json         # 构建清单：版本、提交号、文件 SHA256 清单
+└── _deploy/                # 部署辅助文件，不影响站点运行
+    ├── nginx.conf          # Nginx 配置示例（已按本次 base 渲染）
+    ├── web.config.spafallback  # IIS SPA 回退版（需 URL Rewrite 模块）
+    └── DEPLOY.md           # 本文件
+```
+
+> 站点根目录指向**包含 index.html 的那一层**，即解压后的 `${PACKAGE}/` 本身。
+> `_deploy/` 与 `BUILD_INFO.json` 会被一起发布出去，无敏感信息；如介意可自行删除。
+
+## 2. 部署步骤（Nginx）
+
+```bash
+# 1) 上传到服务器并解压
+unzip ${PACKAGE}.zip -d /var/www/
+# 解压后站点根目录为 /var/www/${PACKAGE}
+# 建议保留带版本号的目录，再用软链指向当前版本，方便回滚：
+ln -sfn /var/www/${PACKAGE} /var/www/gis-tools
+
+# 2) 放置 nginx 配置
+cp _deploy/nginx.conf /etc/nginx/conf.d/gis-tools.conf
+# 编辑该配置：确认 root 指向 /var/www/gis-tools，按需改 server_name
+
+# 3) 校验并生效
+nginx -t && nginx -s reload
+```
+
+### IIS 部署（Windows 服务器）
+
+IIS 静态文件处理对**未注册 MIME 的扩展名直接返回 404**（文件存在也 404），
+`.webmanifest` 正是典型——包根的 `web.config` 已修复该问题：
+
+1. 把部署包解压为 IIS 站点下的应用程序（如应用程序名 `gis-tools`，物理路径指向解压目录）
+2. 包根的 `web.config`（MIME 修复版）保持原位即可，无需重启 IIS
+3. 验证：浏览器访问 `${BASE}manifest.webmanifest`，能显示 JSON 即修复成功
+
+如需浏览器直接刷新子路由不 404（HTML5 history 回退），改用 SPA 回退版：
+
+- 前提：IIS 已安装 **URL Rewrite** 模块（未安装时该配置会导致整站 500.19）
+- 操作：把 `_deploy/web.config.spafallback` 重命名为 `web.config` 覆盖根目录同名文件，然后 `iisreset`
+
+## 3. 部署到站点根目录
+
+本包的基础路径是 `${BASE}`。若需要换成别的路径（如 `/` 根目录），**不要手工改文件**，
+回到源码重新打包：
+
+```bash
+pnpm build:deploy -- --base=/          # 站点根目录
+pnpm build:deploy -- --base=/tools/    # 自定义子目录
+```
+
+脚本会自动改写以下硬编码路径（Vite 的 `base` 配置覆盖不到的部分）：
+
+| 位置 | 内容 |
+| --- | --- |
+| `index.html` | 启动动画 worker `entry-loader-worker.js` |
+| `sw.js` 相关 | 分享拦截路径 `share-receiver`、暂存 key 前缀 |
+| JS chunk | 分享暂存 key：`share-pending-meta` / `share-pending-file-` |
+| `*.webmanifest` | PWA 的 `start_url` / `scope` / `share_target.action` |
+
+## 4. 验证清单
+
+部署后逐项确认：
+
+- [ ] 访问 `${BASE}` 能打开首页，启动动画正常结束（不是一直转圈）
+- [ ] 浏览器直接刷新子路由（如 `${BASE}data`）不出现 404
+- [ ] 控制台无资源 404（重点看 `assets/`、`sw.js`、`entry-loader-worker.js`）
+- [ ] 未配置天地图 Key 时，除底图外的功能均可正常使用
+- [ ] `BUILD_INFO.json` 里的 `version` / `git.commit` 与预期一致
+
+## 5. 发版与回滚
+
+- **发版**：整包覆盖即可。带 hash 的 `assets/` 文件名会变，旧文件残留无害，可定期清理。
+- **缓存**：`index.html` 与 `sw.js` 已配置为不缓存，发版后用户刷新即可拿到新版本。
+- **回滚**：保留上一个版本的 zip / 目录，把软链指回去后 `nginx -s reload`。
+  ```bash
+  ln -sfn /var/www/gis-tools-v上一版本 /var/www/gis-tools
+  nginx -s reload
+  ```
+
+## 6. 注意事项
+
+- **PWA 需要 HTTPS 或 localhost**：Service Worker 只在安全上下文注册，HTTP 域名下 PWA 安装、
+  离线缓存、系统分享目标均不生效。
+- **Web Share Target 缓存**：已安装的 PWA 会缓存 manifest，新增或修改分享目标后，
+  用户需要**卸载并重新安装** PWA 才能生效。
+- **Service Worker 作用域**：SW 只能控制其所在路径及子路径，把包放到非预期子目录会导致
+  PWA 注册失败。

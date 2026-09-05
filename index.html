@@ -331,6 +331,12 @@
         if (window.__fallbackStartEnding) {
           window.__fallbackStartEnding();
         }
+        // 兜底：结束动画本身约 1.1s（END_TOTAL 900 + CLEANUP_DELAY 200），
+        // 这里给 2s 上限。若 Worker 异常没能回传 done（Worker 内部报错不会打到主页面
+        // 控制台，极易变成"进度 100% 后白屏"），超时仍强制移除遮罩，保证页面可用。
+        setTimeout(function () {
+          cleanupLoader();
+        }, 2000);
       };
 
       // 清理函数：先渐隐，过渡完成后移除 DOM

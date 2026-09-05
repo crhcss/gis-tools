@@ -110,7 +110,24 @@ onBeforeUnmount(() => {
 <template>
   <el-config-provider size="small">
     <el-watermark style="height: 100%; width: 100%;" :font="font" :content="[]">
-      <router-view />
+      <!--
+        Suspense 包裹 router-view：
+        路由组件是 () => import() 的异步 chunk（GisData 达 4.5 MB），
+        loading 屏已不再阻塞等它（见 vite.config.ts 的 entryLoaderManifest），
+        因此首屏 loading 消失后到 chunk 就绪之间会出现白屏空档。
+        用 Suspense fallback 盖住这段空档，避免白屏。
+      -->
+      <router-view v-slot="{ Component }">
+        <Suspense>
+          <component :is="Component" />
+          <template #fallback>
+            <div class="route-loading">
+              <div class="route-loading-bar"></div>
+              <span>正在加载数据模块…</span>
+            </div>
+          </template>
+        </Suspense>
+      </router-view>
     </el-watermark>
   </el-config-provider>
 </template>
@@ -119,6 +136,31 @@ html,
 body,
 #app {
   height: 100%;
+}
+
+/* 路由 chunk 加载中的占位（避免首屏 loading 消失后白屏） */
+.route-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  min-height: 240px;
+  color: var(--el-text-color-secondary, #909399);
+  font-size: 13px;
+}
+.route-loading-bar {
+  width: 120px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #ea580c, transparent);
+  background-size: 200% 100%;
+  animation: route-loading-slide 1s linear infinite;
+}
+@keyframes route-loading-slide {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 
 /* 移动端弹窗铺满 + 减少留白 */
