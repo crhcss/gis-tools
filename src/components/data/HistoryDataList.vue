@@ -13,11 +13,15 @@ import type { GisFileData } from '~/components/data/LocalDb'
 import GeoTypeIconRender from '~/components/renders/GeoTypeIconRender.vue'
 import { useBreakpoint } from '~/composables/useBreakpoint'
 
-defineProps<{
+// 注意：Vue 对未传的 Boolean prop 会取 false 而非 undefined，
+// 必须 withDefaults 显式给 true，否则「默认显示移除按钮」不生效
+withDefaults(defineProps<{
   items: GisFileData[]
   /** 是否显示移除按钮，默认显示 */
   removable?: boolean
-}>()
+}>(), {
+  removable: true,
+})
 
 const emit = defineEmits<{
   select: [row: GisFileData]
