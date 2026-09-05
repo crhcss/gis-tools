@@ -8,11 +8,7 @@
  */
 import Common from '~/common/Common'
 import { logger } from '~/common/logger'
-
-/**
- * 天地图底图类型
- */
-export type TianDiTuBasemapType = 'vec' | 'img'
+import { getBasemapRuntimeConfig, onBasemapConfigLoaded } from '~/components/gismap/basemapConfig'
 
 /**
  * 天地图投影类型
@@ -20,48 +16,6 @@ export type TianDiTuBasemapType = 'vec' | 'img'
  * - w: 球面墨卡托投影 (EPSG:3857)
  */
 export type TianDiTuProjectionSuffix = 'c' | 'w'
-
-/**
- * 天地图图层配置
- */
-export interface TianDiTuLayerConfig {
-  /** 图层类型标识：vec=矢量底图, cva=矢量注记, img=影像底图, cia=影像注记 */
-  type: 'vec' | 'cva' | 'img' | 'cia'
-  /** 图层名称 */
-  name: string
-}
-
-/**
- * 天地图底图配置（底图 + 注记）
- */
-export interface TianDiTuBasemapConfig {
-  /** 底图类型 */
-  id: TianDiTuBasemapType
-  /** 显示名称 */
-  label: string
-  /** 底图图层 */
-  baseLayer: TianDiTuLayerConfig
-  /** 注记图层 */
-  annotationLayer: TianDiTuLayerConfig
-}
-
-/**
- * 天地图底图配置表
- */
-export const TIAN_DI_TU_BASEMAPS: Record<TianDiTuBasemapType, TianDiTuBasemapConfig> = {
-  vec: {
-    id: 'vec',
-    label: '矢量',
-    baseLayer: { type: 'vec', name: '矢量底图' },
-    annotationLayer: { type: 'cva', name: '矢量注记' },
-  },
-  img: {
-    id: 'img',
-    label: '影像',
-    baseLayer: { type: 'img', name: '影像底图' },
-    annotationLayer: { type: 'cia', name: '影像注记' },
-  },
-}
 
 /**
  * 根据视图投影代码获取天地图 URL 后缀
@@ -77,20 +31,23 @@ export function getTianDiTuProjSuffix(_viewProjCode: string): TianDiTuProjection
  * 根据当前页面协议获取天地图基础 URL 前缀
  * 使用新域名 tianditu.gov.cn（同时支持 HTTP 和 HTTPS）
  * 旧域名 tianditu.com 不支持 HTTPS，在 HTTPS 页面下会被浏览器拦截
+ * config.json 里配了 baseUrl 时以其为准（内网镜像/自建节点场景）
  */
 function getTianDiTuBaseUrl(): string {
+  const configured = getBasemapRuntimeConfig().tianditu.baseUrl.replace(/\/+$/, '')
+  if (configured) return configured
   const protocol = typeof location !== 'undefined' && location.protocol === 'https:' ? 'https' : 'http'
   return `${protocol}://t0.tianditu.gov.cn`
 }
 
 /**
  * 构建天地图图层 URL
- * @param layerType 图层类型 (vec/cva/img/cia)
+ * @param layerType 图层类型 (vec/cva/img/cia)，也支持 config.json 里自定义的类型
  * @param projSuffix 投影后缀 (c/w)
  * @returns 完整的天地图 DataServer URL
  */
 export function buildTianDiTuLayerUrl(
-  layerType: TianDiTuLayerConfig['type'],
+  layerType: string,
   projSuffix: TianDiTuProjectionSuffix,
 ): string {
   return `${getTianDiTuBaseUrl()}/DataServer?T=${layerType}_${projSuffix}`
@@ -111,37 +68,34 @@ interface TianDiTuKeyState {
 let cachedState: TianDiTuKeyState | null = null
 
 /**
- * 从环境变量加载所有 key（兼容 VITE_TIANDITU_API_KEYS 和 VITE_TIANDITU_API_KEY）
+ * 加载所有可用 key：config.json 的 basemap.tianditu.keys + 构建期环境变量
+ * 部署后只需改 config.json，无需重新打包
  */
-function loadKeysFromEnv(): string[] {
-  const multi = import.meta.env.VITE_TIANDITU_API_KEYS as string | undefined
-  const single = import.meta.env.VITE_TIANDITU_API_KEY as string | undefined
-  const set = new Set<string>()
-  if (multi) {
-    multi.split(',').map(s => s.trim()).filter(Boolean).forEach(k => set.add(k))
-  }
-  if (single) {
-    set.add(single.trim())
-  }
-  return Array.from(set)
+function loadKeys(): string[] {
+  return getBasemapRuntimeConfig().tianditu.keys.filter(Boolean)
 }
+
+// config.json 加载完成后（key 可能已变），重置轮换缓存让新配置立即生效
+onBasemapConfigLoaded(() => {
+  cachedState = null
+})
 
 /**
  * 从 localStorage 恢复 key 状态
  */
 function loadState(): TianDiTuKeyState | null {
   if (cachedState) return cachedState
-  const envKeys = loadKeysFromEnv()
-  if (envKeys.length === 0) return null
+  const configuredKeys = loadKeys()
+  if (configuredKeys.length === 0) return null
   try {
     const raw = localStorage.getItem(TDT_KEYS_STORAGE)
     const idxRaw = localStorage.getItem(TDT_ACTIVE_INDEX_STORAGE)
     if (raw) {
       const stored = JSON.parse(raw) as string[]
-      // 只保留仍在环境变量中的 key
-      const valid = stored.filter(k => envKeys.includes(k))
+      // 只保留仍在配置中的 key
+      const valid = stored.filter(k => configuredKeys.includes(k))
       // 追加新加入的 key 到末尾
-      for (const k of envKeys) {
+      for (const k of configuredKeys) {
         if (!valid.includes(k)) valid.push(k)
       }
       if (valid.length > 0) {
@@ -153,7 +107,7 @@ function loadState(): TianDiTuKeyState | null {
   } catch {
     // ignore
   }
-  cachedState = { keys: envKeys, activeIndex: 0 }
+  cachedState = { keys: configuredKeys, activeIndex: 0 }
   return cachedState
 }
 
@@ -199,7 +153,7 @@ async function probeKey(key: string, timeoutMs = 4000): Promise<boolean> {
 export async function selectAvailableTianDiTuKey(): Promise<string> {
   const state = loadState()
   if (!state || state.keys.length === 0) {
-    logger.warn('天地图 API Key 未配置')
+    logger.warn('天地图 API Key 未配置：请在部署目录 config.json 的 basemap.tianditu.keys 中配置')
     return ''
   }
 
@@ -266,9 +220,13 @@ export function resetTianDiTuKeyState(): void {
  * @returns true 表示可用
  */
 export async function checkTianDiTuAvailability(): Promise<boolean> {
+  if (!getBasemapRuntimeConfig().tianditu.enabled) {
+    logger.warn('天地图底图服务已在 config.json 中禁用')
+    return false
+  }
   const state = loadState()
   if (!state || state.keys.length === 0) {
-    logger.warn('天地图 API Key 未配置，底图切换不可用')
+    logger.warn('天地图 API Key 未配置，底图切换不可用：请在部署目录 config.json 的 basemap.tianditu.keys 中配置')
     return false
   }
   const key = await selectAvailableTianDiTuKey()

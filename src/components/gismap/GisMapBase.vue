@@ -46,6 +46,7 @@ import {setMainMap} from '~/composables/gisMap';
 
 import BasemapSwitcher from './BasemapSwitcher.vue';
 import {BaseTianDiTuMap, BlankMap, GisMap, GisMapOption} from './GisMap';
+import { isBasemapServiceEnabled, loadBasemapRuntimeConfig } from './basemapConfig';
 import {getChinaBoundaryImage} from './data/chinaBoundaryCache';
 import {Types as MapTypes} from './events/GisMapEvents';
 import type {GisMapLayer} from './layer/GisLayer';
@@ -99,7 +100,8 @@ function getViewProjCode(): string {
  * mapType='blank' 时默认无底图，mapType='tianditu' 时默认矢量底图
  */
 const initialBasemapId = computed<'none' | 'vec'>(() => {
-  return props.mapType === 'tianditu' ? 'vec' : 'none'
+  // mapType='tianditu' 且配置里矢量服务启用时才默认矢量，否则无底图
+  return props.mapType === 'tianditu' && isBasemapServiceEnabled('vec') ? 'vec' : 'none'
 })
 
 /**
@@ -219,7 +221,9 @@ onMounted(async () => {
     return;
   }
 
-  // 先探测可用 key，避免地图初始化时使用限额的 key
+  // 先加载运行时底图配置（config.json，部署后可直接修改），再探测可用 key，
+  // 避免地图初始化时使用限额的 key
+  await loadBasemapRuntimeConfig();
   await selectAvailableTianDiTuKey();
 
   let mapClass = BlankMap

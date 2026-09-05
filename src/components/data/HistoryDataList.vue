@@ -6,6 +6,8 @@
  * @author yuanyu <yuanyu@supermap.com>
  * @date 2026-06-27
  */
+import { Delete } from '@element-plus/icons-vue'
+
 import Common from '~/common/Common'
 import type { GisFileData } from '~/components/data/LocalDb'
 import GeoTypeIconRender from '~/components/renders/GeoTypeIconRender.vue'
@@ -13,10 +15,13 @@ import { useBreakpoint } from '~/composables/useBreakpoint'
 
 defineProps<{
   items: GisFileData[]
+  /** 是否显示移除按钮，默认显示 */
+  removable?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [row: GisFileData]
+  remove: [row: GisFileData]
 }>()
 
 const { isMobile } = useBreakpoint()
@@ -146,6 +151,19 @@ const formatFileType = (name: string): string => {
           </div>
         </div>
       </template>
+      <!-- 移除按钮：两端共用，阻止冒泡避免触发选中 -->
+      <el-button
+        v-if="removable !== false"
+        class="history-item-remove"
+        :class="{ 'is-mobile': isMobile }"
+        :icon="Delete"
+        circle
+        size="small"
+        type="danger"
+        plain
+        title="移除该历史数据"
+        @click.stop="emit('remove', row)"
+      />
     </div>
   </div>
 </template>
@@ -174,6 +192,18 @@ const formatFileType = (name: string): string => {
 .history-item:hover {
   border-color: var(--el-color-primary-light-5);
   background: var(--el-fill-color-light);
+}
+
+/* ===== 移除按钮：桌面端 hover 显现，移动端常显 ===== */
+.history-item-remove {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.history-item:hover .history-item-remove,
+.history-item-remove.is-mobile {
+  opacity: 1;
 }
 
 /* 移动端卡片更紧凑 */

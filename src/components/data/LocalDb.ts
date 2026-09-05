@@ -143,6 +143,32 @@ export default class LocalDb {
         })
     } */
 
+    /**
+     * 删除指定历史记录
+     * @param id 记录主键（GisFileData.id）
+     */
+    remove(id: number): Promise<unknown> {
+        return new Promise((resolve, reject) => {
+            this._inited.then(() => {
+                try {
+                    const objectStore: IDBObjectStore = this.getIDBObjectStore('readwrite');
+                    const result = objectStore.delete(id)
+                    result.onsuccess = (e) => {
+                        this.disPatchChanged(e);
+                        resolve(e);
+                    }
+                    result.onerror = (e) => {
+                        logger.error('IndexedDB删除失败:', e);
+                        reject(new GisError(GisErrorCode.STORAGE_WRITE_FAILED, 'IndexedDB删除失败', e));
+                    }
+                } catch (e) {
+                    logger.error('IndexedDB删除失败:', e);
+                    reject(new GisError(GisErrorCode.STORAGE_WRITE_FAILED, 'IndexedDB删除失败', e));
+                }
+            })
+        })
+    }
+
     listAll(): Promise<GisFileData[]> {
         return new Promise<GisFileData[]>((resolve, reject) => {
             this._inited.then(() => {

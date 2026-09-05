@@ -1,0 +1,29 @@
+{
+  "basemap": {
+    "tianditu": {
+      "enabled": true,
+      "baseUrl": "",
+      "keys": ["7e4a157f07a3fccce3d4f7d9bf1c1382"]
+    },
+    "services": [
+      {
+        "id": "vec",
+        "label": "矢量",
+        "enabled": true,
+        "url": "https://t0.tianditu.gov.cn/DataServer?T=vec_c&x={x}&y={y}&l={z}&tk={key}",
+        "annotationUrl": "https://t0.tianditu.gov.cn/DataServer?T=cva_c&x={x}&y={y}&l={z}&tk={key}",
+        "layerType": "vec",
+        "annotationLayerType": "cva"
+      },
+      {
+        "id": "img",
+        "label": "影像",
+        "enabled": true,
+        "url": "https://t0.tianditu.gov.cn/DataServer?T=img_c&x={x}&y={y}&l={z}&tk={key}",
+        "annotationUrl": "https://t0.tianditu.gov.cn/DataServer?T=cia_c&x={x}&y={y}&l={z}&tk={key}",
+        "layerType": "img",
+        "annotationLayerType": "cia"
+      }
+    ]
+  }
+}

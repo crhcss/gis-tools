@@ -157,6 +157,20 @@ export class SysGisMapLayer implements GisMapLayer {
 }
 
 
+/**
+ * 构建瓦片 URL
+ * - URL 里已含 {z}/{x}/{y} 占位符：视为 config.json 配置的自定义服务模板，只替换 {key}
+ * - 否则按天地图 DataServer 规则补查询参数
+ * @param url 服务 URL（模板或天地图 DataServer 地址）
+ * @param key 天地图 API Key
+ */
+function buildTileUrl(url: string, key: string): string {
+    if (url.includes('{z}') || url.includes('{x}') || url.includes('{y}')) {
+        return url.replace(/\{key\}/g, key)
+    }
+    return `${url}&x={x}&y={y}&l={z}&tk=${key}`
+}
+
 export class TianDiTuGisMapLayer implements GisMapLayer {
     id?: string;
     name?: string;
@@ -175,13 +189,19 @@ export class TianDiTuGisMapLayer implements GisMapLayer {
         const tiandituApiKey = getCurrentTianDiTuKey();
         this.sercurityTokens.set('tdt', tiandituApiKey);
         let url = options.url || ''; // 提供一个默认URL
+        this.name = options.name;
 
         if(url===''){
             throw new Error('url is required');
         }
-        const _url = new URL(url);
-        if(_url.search==''){
-            url += '?gismap=1'
+        // 兼容相对路径的自定义服务（config.json 里可能配相对地址），解析失败时原样保留
+        try {
+            const _url = new URL(url);
+            if(_url.search==''){
+                url += '?gismap=1'
+            }
+        } catch {
+            logger.warn('底图服务 URL 不是绝对地址，原样使用:', url);
         }
         this.url = url;
     }
@@ -199,12 +219,14 @@ export class TianDiTuGisMapLayer implements GisMapLayer {
     }
     init() {
         const tiandituApiKey = this.sercurityTokens.get('tdt');
+        // 天地图 _c 瓦片是经纬度投影（EPSG:4326/4490，CGCS2000 与 WGS84 共用同一地理瓦片网格）
+        // _w 瓦片是 EPSG:3857 球面墨卡托投影。按 URL 中 T= 参数的后缀判断，
+        // 明确设置 source projection，OL 会自动重投影到视图投影
+        const isGeoTile = /T=[A-Za-z]+_c(?:&|$)/.test(this.url);
         this.layer = new TileLayer({
             source: new XYZ({
-                // 天地图 _w 瓦片是 EPSG:3857 球面墨卡托投影
-                // 明确设置 source projection，OL 会自动重投影到视图投影
-                projection: 'EPSG:3857',
-                url: `${this.url}&x={x}&y={y}&l={z}&tk=${tiandituApiKey}`,
+                projection: isGeoTile ? 'EPSG:4326' : 'EPSG:3857',
+                url: buildTileUrl(this.url, tiandituApiKey || ''),
                 // 天地图瓦片级别范围 0-18（最大 19 级含 0）
                 minZoom: 0,
                 maxZoom: 18,

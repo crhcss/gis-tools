@@ -33,6 +33,7 @@ import EventBase from "~/event/EventBase";
 
 
 import MapHelper from "./MapHelper";
+import {getBasemapService} from "./basemapConfig";
 import {getChinaBoundaryImage} from "./data/chinaBoundaryCache";
 import {GisMapDrawEndEvent, GisMapNotifyEvent, GisMapModifyChangeEvent} from "./events/GisMapEvents";
 import {TianDiTuGisMapLayer, GisMapLayer, SysGisMapLayer, GisLayerOption, ImageGisMapLayer} from "./layer/GisLayer";
@@ -1127,13 +1128,19 @@ export class BaseTianDiTuMap extends GisMap {
             projection: _projection
         });
         const projSuffix = getTianDiTuProjSuffix(_projection);
-        this.baseLayers = [
-            new TianDiTuGisMapLayer({url: buildTianDiTuLayerUrl('vec', projSuffix)}),
-            new TianDiTuGisMapLayer({url: buildTianDiTuLayerUrl('cva', projSuffix)})
-        ];
-        // 添加底图（init 只初始化 map，不会自动 addLayer）
-        if (this.olMap) {
-            this.addLayer(this.olMap, this.baseLayers);
+        // 默认底图取配置里的矢量服务：config.json 改 url 即换服务，enabled=false 则不加载
+        const vecService = getBasemapService('vec');
+        if (vecService && vecService.enabled) {
+            this.baseLayers = [
+                new TianDiTuGisMapLayer({url: vecService.url || buildTianDiTuLayerUrl(vecService.layerType || 'vec', projSuffix)}),
+                new TianDiTuGisMapLayer({url: vecService.annotationUrl || buildTianDiTuLayerUrl(vecService.annotationLayerType || 'cva', projSuffix)})
+            ];
+            // 添加底图（init 只初始化 map，不会自动 addLayer）
+            if (this.olMap) {
+                this.addLayer(this.olMap, this.baseLayers);
+            }
+        } else {
+            logger.warn('矢量底图服务未在 config.json 中启用，初始底图为空');
         }
 
         // 投影坐标系：fit 中国范围确保完整显示

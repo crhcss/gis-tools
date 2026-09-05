@@ -294,6 +294,20 @@ const handleHistoryRowClick = (row: GisFileData) => {
     handleError(e as Error)
   }
 }
+
+/** 移除一条历史数据（二次确认后从 IndexedDB 删除，列表自动刷新） */
+const handleHistoryRemove = (row: GisFileData) => {
+  ElMessageBox.confirm(
+    `确认移除历史数据「${row.name}」？移除后不可恢复。`,
+    '移除历史数据',
+    { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消' },
+  ).then(() => {
+    localDb.remove(row.id).catch((e: unknown) => {
+      logger.error('历史数据移除失败:', e)
+      handleError(e as Error)
+    })
+  }).catch(() => {})
+}
 </script>
 
 <template>
@@ -458,7 +472,7 @@ const handleHistoryRowClick = (row: GisFileData) => {
       <div v-if="datasets.length === 0" class="empty-state">
         <!-- 有历史记录时显示历史记录卡片列表 -->
         <div v-if="historyLoaded && historyDatas.length > 0" class="history-content">
-          <HistoryDataList :items="historyDatas" @select="handleHistoryRowClick" />
+          <HistoryDataList :items="historyDatas" @select="handleHistoryRowClick" @remove="handleHistoryRemove" />
         </div>
         <!-- 无历史记录时显示空状态 -->
         <div v-else class="empty-content" role="button" tabindex="0"

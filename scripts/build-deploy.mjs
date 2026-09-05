@@ -299,6 +299,55 @@ function ensureIisWebConfig(distDir, vars) {
   return true
 }
 
+// ---------------------------------------------------------------- 运行时配置
+
+/**
+ * 底图服务运行时配置（dist/config.json）
+ *
+ * public/config.json 随构建原样拷贝到 dist 根目录，站点部署后可直接修改、刷新生效
+ * （地图右下角矢量/影像底图的 key、域名、自定义服务地址都在这里配）。
+ * 构建机设置 TIANDITU_API_KEYS（或 VITE_TIANDITU_API_KEYS）环境变量时，
+ * 会把 key 注入 dist/config.json，实现"打包时注入、部署后仍可手工修改"。
+ */
+function ensureBasemapConfig(distDir) {
+  const target = path.join(distDir, 'config.json')
+  const source = path.join(ROOT, 'public', 'config.json')
+
+  if (!fs.existsSync(target)) {
+    if (!fs.existsSync(source)) {
+      console.warn('[warn] 缺少 public/config.json，跳过底图运行时配置')
+      return false
+    }
+    fs.copyFileSync(source, target)
+  }
+
+  const envKeys = (process.env.TIANDITU_API_KEYS || process.env.VITE_TIANDITU_API_KEYS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  if (envKeys.length === 0) {
+    log('底图运行时配置: dist/config.json 就绪（未设置 TIANDITU_API_KEYS，key 留待部署后填写）')
+    return true
+  }
+
+  let config
+  try {
+    config = JSON.parse(fs.readFileSync(target, 'utf8'))
+  } catch (err) {
+    console.warn(`[warn] dist/config.json 解析失败，跳过 key 注入: ${err.message}`)
+    return false
+  }
+  config.basemap ??= {}
+  config.basemap.tianditu ??= {}
+  // 环境变量的 key 放前面，config 里已写的 key 保留在后
+  const existing = Array.isArray(config.basemap.tianditu.keys) ? config.basemap.tianditu.keys : []
+  config.basemap.tianditu.keys = [...new Set([...envKeys, ...existing])]
+  fs.writeFileSync(target, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+  log(`底图运行时配置: 已注入 ${envKeys.length} 个天地图 key 到 dist/config.json`)
+  return true
+}
+
 // ---------------------------------------------------------------- 清单与模板
 
 function buildFileList(distDir) {
@@ -391,7 +440,7 @@ function main() {
   log('='.repeat(64))
 
   // 1. 构建
-  step('[1/4] 构建生产产物')
+  step("[1/5] 构建生产产物")
   if (opts.skipBuild) {
     log('--skip-build：跳过构建')
   } else {
@@ -402,11 +451,16 @@ function main() {
   }
 
   // 2. 基础路径改写
-  step('[2/4] 改写硬编码基础路径')
+  step("[2/5] 改写硬编码基础路径")
   rewriteBasePath(distDir, opts.base)
 
+  // 2.5 底图服务运行时配置（部署后可直接改 dist/config.json）
+  if (ensureBasemapConfig(distDir)) {
+    log('已生成 dist/config.json（底图服务运行时配置）')
+  }
+
   // 3. 生成清单与部署说明
-  step('[3/4] 生成构建清单与部署说明')
+  step("[3/5] 生成构建清单与部署说明")
 
   const vars = {
     VERSION: pkg.version,
@@ -464,7 +518,7 @@ function main() {
   log(`清单   ${files.length} 个文件，共 ${humanSize(totalSize)}`)
 
   // 4. 打包
-  step('[4/4] 生成部署包')
+  step("[4/5] 生成部署包")
   fs.mkdirSync(outDir, { recursive: true })
 
   let finalPath

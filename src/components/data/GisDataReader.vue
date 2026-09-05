@@ -6,6 +6,7 @@
  * @author yuanyu <yuanyu@supermap.com>
  * @date 2026-04-13
  */
+import { ElMessageBox } from 'element-plus';
 import * as GeoJSON from 'geojson';
 import {getCurrentInstance, onMounted, ref,ComponentInternalInstance, computed} from "vue";
 
@@ -116,6 +117,20 @@ const handleHistoryRowClick = (row: GisFileData) => {
     emitHandler('error',e)
     showError(e, '历史记录解析')
   })
+}
+
+/** 移除一条历史数据（二次确认后从 IndexedDB 删除，列表自动刷新） */
+const handleHistoryRemove = (row: GisFileData) => {
+  ElMessageBox.confirm(
+    `确认移除历史数据「${row.name}」？移除后不可恢复。`,
+    '移除历史数据',
+    { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消' },
+  ).then(() => {
+    localDb.remove(row.id).catch((e: unknown) => {
+      appLogger.error('历史数据移除失败:', e);
+      showError(e, '历史数据移除')
+    })
+  }).catch(() => {})
 }
 
 const handleTextConfirm = () => {
@@ -258,6 +273,7 @@ defineExpose({
             v-if="historyDatas.length > 0"
             :items="historyDatas"
             @select="handleHistoryRowClick"
+            @remove="handleHistoryRemove"
           />
           <div v-else class="history-empty">
             <p>暂无历史数据</p>

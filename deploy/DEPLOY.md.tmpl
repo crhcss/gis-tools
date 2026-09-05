@@ -13,6 +13,7 @@
 ```
 ${PACKAGE}/
 ├── index.html              # 应用入口（含启动动画）
+├── config.json             # 底图服务运行时配置（部署后可直接修改，见第 4 节）
 ├── web.config              # IIS MIME 修复（nginx/GH Pages 忽略，无害）
 ├── assets/                 # 带 hash 的 JS / CSS，可长缓存
 ├── *.webmanifest           # PWA 清单
@@ -78,7 +79,50 @@ pnpm build:deploy -- --base=/tools/    # 自定义子目录
 | JS chunk | 分享暂存 key：`share-pending-meta` / `share-pending-file-` |
 | `*.webmanifest` | PWA 的 `start_url` / `scope` / `share_target.action` |
 
-## 4. 验证清单
+## 4. 底图服务配置（config.json）
+
+地图右下角的**矢量 / 影像**底图服务读取包根的 `config.json`，**部署后直接改文件、刷新页面即生效，无需重新打包**：
+
+```jsonc
+{
+  "basemap": {
+    "tianditu": {
+      "enabled": true,                  // 总开关，false 时矢量/影像都不可用
+      "baseUrl": "",                    // 服务域名，留空自动 http/https + t0.tianditu.gov.cn
+      "keys": ["你的天地图key"]          // 多个 key 按顺序探测轮换，逗号分隔语义
+    },
+    "services": [
+      {
+        "id": "vec",                    // 矢量
+        "label": "矢量",                 // 按钮文案，可改名
+        "enabled": true,                // false 时按钮不显示
+        "url": "",                      // 自定义瓦片 URL，留空用天地图默认
+        "annotationUrl": "",            // 自定义注记 URL，留空用天地图默认
+        "layerType": "vec",             // 天地图图层类型（url 为空时生效）
+        "annotationLayerType": "cva"
+      },
+      {
+        "id": "img",                    // 影像，字段同上
+        "label": "影像",
+        "enabled": true,
+        "url": "",
+        "annotationUrl": "",
+        "layerType": "img",
+        "annotationLayerType": "cia"
+      }
+    ]
+  }
+}
+```
+
+- `url` / `annotationUrl` 支持占位符 `{z}` `{x}` `{y}` `{key}`，可指向自建切片或其他厂商服务；
+  留空则走天地图默认服务（此时必须配 key）。
+- 打包时也可注入 key：构建机设置环境变量 `TIANDITU_API_KEYS=key1,key2`，
+  脚本会写入 `dist/config.json`，部署后仍可手工修改覆盖。
+- 修改后不生效时注意浏览器/反向代理缓存：应用请求 config.json 时已自带时间戳参数绕缓存，
+  一般强刷（Ctrl+F5）即可。
+
+## 5. 验证清单
 
 部署后逐项确认：
 
@@ -86,9 +130,10 @@ pnpm build:deploy -- --base=/tools/    # 自定义子目录
 - [ ] 浏览器直接刷新子路由（如 `${BASE}data`）不出现 404
 - [ ] 控制台无资源 404（重点看 `assets/`、`sw.js`、`entry-loader-worker.js`）
 - [ ] 未配置天地图 Key 时，除底图外的功能均可正常使用
+- [ ] 在 `config.json` 填入天地图 Key 后刷新，地图右下角矢量/影像可正常切换显示
 - [ ] `BUILD_INFO.json` 里的 `version` / `git.commit` 与预期一致
 
-## 5. 发版与回滚
+## 6. 发版与回滚
 
 - **发版**：整包覆盖即可。带 hash 的 `assets/` 文件名会变，旧文件残留无害，可定期清理。
 - **缓存**：`index.html` 与 `sw.js` 已配置为不缓存，发版后用户刷新即可拿到新版本。
@@ -98,7 +143,10 @@ pnpm build:deploy -- --base=/tools/    # 自定义子目录
   nginx -s reload
   ```
 
-## 6. 注意事项
+## 7. 注意事项
+
+- **config.json 属于非构建产物**：整包覆盖发版会还原成包内版本，部署后手工改过的 key
+  会被覆盖，发版前先备份或发版后重新填写。
 
 - **PWA 需要 HTTPS 或 localhost**：Service Worker 只在安全上下文注册，HTTP 域名下 PWA 安装、
   离线缓存、系统分享目标均不生效。
