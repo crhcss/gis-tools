@@ -31,6 +31,8 @@ import {
 import GeoTypeIconRender from "~/components/renders/GeoTypeIconRender.vue";
 import {eventBus} from "~/composables/eventBus";
 import {useGisDataStore} from "~/composables/gisDataStore";
+import GisSymbolizationDialog from "~/components/data/GisSymbolizationDialog.vue";
+import type {SymbolizationConfig} from "~/components/data/symbolization";
 
 const props = defineProps({
   data: {
@@ -618,6 +620,44 @@ const handleClearShadow = () => {
     eventBus.emit(`${props.instanceId}`, { event_type: 'map-event:clear-edit-shadow', options: {}, params: [] })
   }
 }
+
+// === 根节点右键菜单：符号化设置 ===
+const contextMenu = ref<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 })
+const symDialogVisible = ref(false)
+const symDialogMode = ref<'single' | 'categorized'>('single')
+
+/** 仅根节点（结构树根）响应右键菜单 */
+const onNodeContextMenu = (evt: Event, data: GeoInfoNode) => {
+  const e = evt as MouseEvent
+  if (data?.id !== 'root') return
+  e.preventDefault()
+  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY }
+}
+
+const openSymbolization = (mode: 'single' | 'categorized') => {
+  symDialogMode.value = mode
+  symDialogVisible.value = true
+  contextMenu.value.visible = false
+}
+
+const clearSymbolization = () => {
+  contextMenu.value.visible = false
+  // eslint-disable-next-line vue/no-mutating-props
+  props.data.symbolization = null
+  if (activeId.value) {
+    updateDataset(activeId.value, props.data)
+  }
+  ElMessage.success('已清除符号化')
+}
+
+const saveSymbolization = (config: SymbolizationConfig) => {
+  // eslint-disable-next-line vue/no-mutating-props
+  props.data.symbolization = config
+  if (activeId.value) {
+    updateDataset(activeId.value, props.data)
+  }
+  ElMessage.success('符号化已应用')
+}
 </script>
 
 <template>
@@ -664,6 +704,7 @@ const handleClearShadow = () => {
         :expand-on-click-node="false"
         node-key="id"
         @node-click="handleTreeNodeClick"
+        @node-contextmenu="onNodeContextMenu"
       >
         <template #default="{ data: nodeData }">
           <span v-if="nodeData" :class="`custom-tree-node ${nodeData.disabled?'disabled':''}`">
@@ -672,6 +713,9 @@ const handleClearShadow = () => {
             <span v-if="splitLabel(nodeData.label).index" class="node-index">{{ splitLabel(nodeData.label).index }}</span>
             <el-tag v-if="nodeData.label2" size="small" :type="label2TagType(nodeData)" effect="plain" round class="label2">
               {{ nodeData.label2 }}
+            </el-tag>
+            <el-tag v-if="nodeData.id === 'root' && data.symbolization" size="small" type="warning" effect="plain" round class="label2">
+              符号化
             </el-tag>
             <span v-if="nodeData.value !== undefined" :class="`val-${ nodeData.typeName}`">{{ nodeData.value }}</span>
             <el-icon v-if="nodeData.geometry || nodeData.sourceFeature" class="node-btn node-btn-edit" title="编辑JSON" @click.stop="handleEditDialogOpen(nodeData)"><Edit /></el-icon>
@@ -762,6 +806,40 @@ const handleClearShadow = () => {
         </div>
       </template>
     </el-dialog>
+
+    <!-- 根节点右键菜单：符号化设置 -->
+    <teleport to="body">
+      <div
+        v-if="contextMenu.visible"
+        class="ctx-overlay"
+        @click="contextMenu.visible = false"
+        @contextmenu.prevent="contextMenu.visible = false"
+      />
+      <div
+        v-if="contextMenu.visible"
+        class="ctx-menu"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      >
+        <div class="ctx-item has-sub" @click.stop>
+          <span>符号化设置</span>
+          <span class="ctx-arrow">›</span>
+          <div class="ctx-submenu">
+            <div class="ctx-item" @click="openSymbolization('single')">单一符号化</div>
+            <div class="ctx-item" @click="openSymbolization('categorized')">分类符号化</div>
+          </div>
+        </div>
+        <div v-if="props.data.symbolization" class="ctx-item ctx-danger" @click="clearSymbolization">清除符号化</div>
+      </div>
+    </teleport>
+
+    <!-- 符号化设置对话框 -->
+    <gis-symbolization-dialog
+      v-model="symDialogVisible"
+      :mode="symDialogMode"
+      :data="data"
+      :config="data.symbolization || null"
+      @apply="saveSymbolization"
+    />
   </div>
 </template>
 
@@ -984,5 +1062,75 @@ const handleClearShadow = () => {
 
 .dirty-tip.visible {
   opacity: 1;
+}
+
+/* === 根节点右键菜单 === */
+.ctx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 3001;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+}
+
+.ctx-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ctx-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.ctx-item.ctx-danger {
+  color: var(--el-color-danger);
+}
+
+.ctx-item.ctx-danger:hover {
+  background: var(--el-color-danger-light-9);
+}
+
+.ctx-arrow {
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* 子菜单：悬停「符号化设置」时向右展开 */
+.ctx-submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  margin-left: 2px;
+  min-width: 132px;
+  padding: 4px;
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+}
+
+.ctx-item.has-sub:hover > .ctx-submenu {
+  display: block;
 }
 </style>

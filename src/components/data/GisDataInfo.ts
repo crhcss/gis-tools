@@ -10,6 +10,7 @@ import * as GeoJSON from 'geojson';
 import {GisError, GisErrorCode} from "~/common/GisError";
 import {logger} from "~/common/logger";
 import GisCrs from "~/components/data/GisCrs";
+import type {SymbolizationConfig} from "~/components/data/symbolization";
 
 export enum GisDataType {
     // Base64编码格式
@@ -67,6 +68,8 @@ export default class GisDataInfo implements DataInfo {
     public features: GeoJSON.Feature[];
     // 坐标系统信息
     public crs?: GisCrs
+    // 图斑符号化配置（单一 / 分类），null 表示使用默认样式
+    public symbolization?: SymbolizationConfig | null
 
     /**
      * 构造函数，初始化地理信息系统数据的信息
@@ -127,6 +130,9 @@ export default class GisDataInfo implements DataInfo {
             gisDataInfo.features = JSON.parse(JSON.stringify(originData.features));
             if (originData.descriptions) {
                 gisDataInfo.descriptions = JSON.parse(JSON.stringify(originData.descriptions));
+            }
+            if (originData.symbolization !== undefined) {
+                gisDataInfo.symbolization = JSON.parse(JSON.stringify(originData.symbolization));
             }
         } catch (e) {
             logger.error('Failed to clone GisDataInfo:', e);

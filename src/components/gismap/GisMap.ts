@@ -22,6 +22,7 @@ import {Draw, Interaction, Modify, Snap} from "ol/interaction";
 import type BaseLayer from "ol/layer/Base";
 import {fromLonLat, get as getProjection, getTransform} from "ol/proj";
 import {Circle, Fill, Stroke, Style, Text} from "ol/style";
+import type {StyleLike} from "ol/style/Style";
 import {isRef, Ref, toValue} from "vue";
 
 import Common from "~/common/Common";
@@ -609,6 +610,11 @@ export class GisMap extends EventBase {
         const lay = this.getLayerByName(layerName, {style: options?.style as GisLayerOption['style']});
         if (options?.clear) {
             lay.clear();
+        }
+        // 显式应用样式函数：getLayerByName 仅在图层首次创建时生效，
+        // 已存在图层需在此重置样式（符号化 / 清除符号化都走这条路径）
+        if (options?.style && typeof options.style === 'function') {
+            (lay as SysGisMapLayer).setStyle(options.style as StyleLike);
         }
         if (lay.source) {
             const feas = this.readFeaturesFromGeoJSON(features);

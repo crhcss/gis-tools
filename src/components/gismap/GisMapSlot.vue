@@ -27,6 +27,8 @@ import GisDataInfo from '~/components/data/GisDataInfo'
 import GisMapTianditu from '~/components/gismap/GisMapTianditu.vue'
 import { GisMapAddFeaturesEvent, GisMapflashFeaturesEvent, GisMapStopModifyEvent } from '~/components/gismap/events/GisMapEvents'
 import { eventBus } from '~/composables/eventBus'
+import { buildSymbolizationStyleFunction } from '~/components/data/symbolization'
+import { defaultStyle } from '~/components/gismap/styles/GisStyle'
 
 const props = defineProps<{
   datasetId: string
@@ -74,7 +76,11 @@ const renderMapFeatures = () => {
   features.forEach((f, idx) => {
     (f as GeoFeature & { label?: number }).label = idx
   })
-  eventBus.emit(mapName.value, new GisMapAddFeaturesEvent(features, { clear: true }))
+  // 符号化：有配置则用自定义样式函数，否则沿用默认样式（几何类型语义色）
+  const styleFn = props.data.symbolization
+    ? buildSymbolizationStyleFunction(props.data.symbolization)
+    : defaultStyle
+  eventBus.emit(mapName.value, new GisMapAddFeaturesEvent(features, { clear: true, style: styleFn }))
 }
 
 // 闪烁几何体
